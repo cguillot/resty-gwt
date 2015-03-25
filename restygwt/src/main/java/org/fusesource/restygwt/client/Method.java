@@ -114,14 +114,18 @@ public class Method {
     }
 
     public Method header(String header, String value) {
-        builder.setHeader(header, value);
+        if (value != null) {
+          builder.setHeader(header, value);
+        }
         return this;
     }
 
     public Method headers(Map<String, String> headers) {
         if (headers != null) {
             for (Entry<String, String> entry : headers.entrySet()) {
-                builder.setHeader(entry.getKey(), entry.getValue());
+                if (entry.getValue() != null) {
+                  builder.setHeader(entry.getKey(), entry.getValue());
+                }
             }
         }
         return this;
@@ -187,15 +191,15 @@ public class Method {
 	/**
      * Local file-system (file://) does not return any status codes.
      * Therefore - if we read from the file-system we accept all codes.
-     * 
+     *
      * This is for instance relevant when developing a PhoneGap application with
      * restyGwt.
      */
     public boolean isExpected(int status) {
-    	
+
     	String baseUrl = GWT.getHostPageBaseURL();
     	String requestUrl = builder.getUrl();
-		
+
     	if (FileSystemHelper.isRequestGoingToFileSystem(baseUrl, requestUrl)) {
     		return true;
     	} else if (anyStatus) {
@@ -219,7 +223,7 @@ public class Method {
         }
         return this.logger;
     }
-    
+
     public Object send(final TextCallback callback) {
         defaultAcceptType(Resource.CONTENT_TYPE_TEXT);
         try {
