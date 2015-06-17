@@ -30,11 +30,14 @@ import java.util.Set;
 
 import org.fusesource.restygwt.client.Json;
 import org.fusesource.restygwt.client.Json.Style;
+
 import static org.fusesource.restygwt.rebind.util.AnnotationUtils.*;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
@@ -60,6 +63,7 @@ import com.google.gwt.json.client.JSONValue;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
 import com.google.gwt.thirdparty.guava.common.collect.Maps;
 import com.google.gwt.user.rebind.ClassSourceFileComposerFactory;
+
 import javax.xml.bind.annotation.XmlTransient;
 
 /**
@@ -277,9 +281,11 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
 
                                     Json jsonAnnotation = getAnnotation(field, Json.class);
                                     JsonProperty jsonPropertyAnnotation = getAnnotation(field, JsonProperty.class);
+                                    JsonInclude jsonIncludeAnnotation = getAnnotation(field, JsonInclude.class);
 
                                     String name = field.getName();
                                     String jsonName = name;
+                                    boolean includeNonNull = false;
 
                                     if (jsonAnnotation != null && jsonAnnotation.name().length() > 0) {
                                         jsonName = jsonAnnotation.name();
@@ -287,7 +293,9 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
                                     if (jsonPropertyAnnotation != null && jsonPropertyAnnotation.value() != null && jsonPropertyAnnotation.value().length() > 0) {
                                         jsonName = jsonPropertyAnnotation.value();
                                     }
-
+                                    if (jsonIncludeAnnotation != null && jsonIncludeAnnotation.value() != null) {
+                                        includeNonNull = (jsonIncludeAnnotation.value() == Include.NON_NULL);
+                                    }
                                     String fieldExpr = "parseValue." + name;
                                     if (getterName != null) {
                                         fieldExpr = "parseValue." + getterName + "()";
@@ -298,7 +306,7 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
 
                                     p("{").i(1);
                                     {
-                                        if (null != field.getType().isEnum()) {
+                                        if (null != field.getType().isEnum() || includeNonNull) {
                                             p("if(" + fieldExpr + " == null) {").i(1);
                                             p("rc.put(" + wrap(jsonName) + ", " + JSON_NULL_CLASS + ".getInstance());");
                                             i(-1).p("} else {").i(1);
@@ -311,7 +319,7 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
                                         }
                                         i(-1).p("}");
 
-                                        if (null != field.getType().isEnum()) {
+                                        if (null != field.getType().isEnum() || includeNonNull) {
                                             i(-1).p("}");
                                         }
 
@@ -767,7 +775,7 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
      * @return
      */
     private boolean exists(JClassType type, JField field, String fieldName, boolean isSetter) {
-        if ( field instanceof DummyJField ){
+        if ( field instanceof DummyJField && !(field instanceof DummyJFieldExt)){
             return true;
         }
 
@@ -846,8 +854,12 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
                 JField f = type.findField( name );
                 // is getter annotated, if yes use this annotation for the field
                 JsonProperty propName = null;
+                JsonInclude jsonInclude = null;
                 if ( entry.getValue().isAnnotationPresent(JsonProperty.class) ) {
                     propName = getAnnotation(entry.getValue(), JsonProperty.class);
+                }
+                if ( entry.getValue().isAnnotationPresent(JsonInclude.class) ) {
+                    jsonInclude = getAnnotation(entry.getValue(), JsonInclude.class);
                 }
                 // is setter annotated, if yes use this annotation for the field
                 JMethod m = type.findMethod("s" + entry.getValue().getName().substring(1),
@@ -855,20 +867,34 @@ public class JsonEncoderDecoderClassCreator extends BaseSourceCreator {
                 if ( m != null && m.isAnnotationPresent(JsonProperty.class) ) {
                     propName = getAnnotation(m, JsonProperty.class);
                 }
+                if ( m != null && m.isAnnotationPresent(JsonInclude.class) ) {
+                    jsonInclude = getAnnotation(m, JsonInclude.class);
+                }
+                DummyJField dummy = null;
                 // if have a field and an annotation from the getter/setter then use that annotation 
                 if ( propName != null && found && !f.getName().equals(propName.value())) {
-                    allFields.remove(f);
-                    DummyJField dummy = new DummyJField( name, entry.getValue().getReturnType() );
+                    // allFields.remove(f);
+                    dummy = new DummyJField( name, entry.getValue().getReturnType() );
                     dummy.setAnnotation( propName );
-                    allFields.add(dummy);
+                    //allFields.add(dummy);
                 }
                 if ( ! found && !( f != null && f.isAnnotationPresent( JsonIgnore.class ) ) ){
-                    DummyJField dummy = new DummyJField( name, entry.getValue().getReturnType() );
+                    dummy = new DummyJField( name, entry.getValue().getReturnType() );
                     if ( entry.getValue().isAnnotationPresent(JsonProperty.class) ) {
                         dummy.setAnnotation( getAnnotation(entry.getValue(), JsonProperty.class) );
                     }
-                    allFields.add( dummy );
                 }
+                if (jsonInclude != null) {
+                    if (dummy == null) {
+                        dummy = new DummyJFieldExt( name, entry.getValue().getReturnType(), entry.getValue().getEnclosingType() );
+                    }
+                    dummy.setAnnotation( jsonInclude );
+                }
+
+                if (dummy != null) {
+                    allFields.remove(f);
+                    allFields.add(dummy);
+                }                
             }
         }
         return allFields;
